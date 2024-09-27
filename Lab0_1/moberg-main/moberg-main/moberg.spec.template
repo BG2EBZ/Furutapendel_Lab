@@ -1,0 +1,216 @@
+Name:           moberg
+Version:        __MOBERG_VERSION__
+Release:        1
+Summary:        Library for abstracting physical I/O
+License:        GPLv3
+Source0:        https://gitlab.control.lth.se/anders_blomdell/moberg/-/archive/master/moberg-__MOBERG_VERSION__.tar.gz
+
+%if 0%{!?python3_pkgversion:1}
+%define python3_pkgversion 3
+%endif
+
+BuildRequires:  gcc
+BuildRequires:  comedilib-devel
+BuildRequires:  valgrind
+BuildRequires:  libxdg-basedir-devel
+BuildRequires:  java-1.8.0-devel
+BuildRequires:  python2-devel
+BuildRequires:  python3-devel
+BuildRequires:  julia
+BuildRequires:  git
+
+
+%description
+Shared library for abstracting physical process I/O (analog, digital
+and encoders)
+
+%package comedi
+Summary: Comedi support for %{name}
+Requires: %{name} = %{version}-%{release}
+Requires:       comedilib
+
+%description comedi
+Comedi support for for %{name}
+
+%package devel
+Summary: Development files for %{name}
+Requires: %{name} = %{version}-%{release}
+
+%description devel
+Development files for %{name}
+
+%package java
+Summary: Java support files for %{name}
+Requires: %{name} = %{version}-%{release}
+
+%description java
+Java support files for %{name}
+
+%package matlab
+Summary: Matlab support files for %{name}
+Requires: %{name} = %{version}-%{release}
+Requires: %{name}-devel = %{version}-%{release}
+
+%description matlab
+Matlab support files for %{name}
+
+%package python2
+Summary: Python2 support files for %{name}
+Requires: %{name} = %{version}-%{release}
+
+%description python2
+Python2 support files for %{name}
+
+%package python%{python3_pkgversion}
+Summary: Python3 support files for %{name}
+Requires: %{name} = %{version}-%{release}
+
+%description python%{python3_pkgversion}
+Python3 support files for %{name}
+
+%package julia
+Summary: Julia support files for %{name}
+Requires: %{name} = %{version}-%{release}
+Requires: julia
+
+%description julia
+Julia support files for %{name}
+
+
+%prep
+%setup -q -n %{name}-__MOBERG_VERSION__
+
+
+%build
+make MOBERG_VERSION=%{version}
+
+%check
+make test || true
+
+%install
+rm -rf ${RPM_BUILD_ROOT}
+
+mkdir -p ${RPM_BUILD_ROOT}%{_libdir}
+cp build/libmoberg*.so ${RPM_BUILD_ROOT}%{_libdir}
+mkdir -p ${RPM_BUILD_ROOT}%{_sbindir}
+cp build/moberg ${RPM_BUILD_ROOT}%{_sbindir}
+
+mkdir -p ${RPM_BUILD_ROOT}%{_includedir}
+cp moberg.h ${RPM_BUILD_ROOT}%{_includedir}
+
+# devel
+cp moberg_config.h ${RPM_BUILD_ROOT}%{_includedir}
+cp moberg_device.h ${RPM_BUILD_ROOT}%{_includedir}
+cp moberg_inline.h ${RPM_BUILD_ROOT}%{_includedir}
+cp moberg_module.h ${RPM_BUILD_ROOT}%{_includedir}
+cp moberg_parser.h ${RPM_BUILD_ROOT}%{_includedir}
+
+# Java
+JAVA_ARCH=$(adaptors/java/src/getProperty_os_arch)
+mkdir -p ${RPM_BUILD_ROOT}/opt/java/se.lth.control.realtime.Moberg/jre/lib/${JAVA_ARCH}
+mkdir -p ${RPM_BUILD_ROOT}/opt/java/se.lth.control.realtime.Moberg/jre/lib/ext
+cp adaptors/java/README ${RPM_BUILD_ROOT}/opt/java/se.lth.control.realtime.Moberg
+cp -r adaptors/java/src ${RPM_BUILD_ROOT}/opt/java/se.lth.control.realtime.Moberg/src
+cp adaptors/java/build/libse_lth_control_realtime_moberg_Moberg.so \
+   ${RPM_BUILD_ROOT}/opt/java/se.lth.control.realtime.Moberg/jre/lib/${JAVA_ARCH}/
+cp adaptors/java/build/Moberg.jar \
+   ${RPM_BUILD_ROOT}/opt/java/se.lth.control.realtime.Moberg/jre/lib/ext/
+      
+# Matlab
+mkdir -p ${RPM_BUILD_ROOT}/opt/matlab/src/moberg
+mkdir -p ${RPM_BUILD_ROOT}%{_includedir}
+cp adaptors/matlab/moberg4simulink.h ${RPM_BUILD_ROOT}%{_includedir}
+cp adaptors/matlab/realtimer.c ${RPM_BUILD_ROOT}/opt/matlab/src/moberg
+cp adaptors/matlab/*in.c ${RPM_BUILD_ROOT}/opt/matlab/src/moberg
+cp adaptors/matlab/*out.c ${RPM_BUILD_ROOT}/opt/matlab/src/moberg
+cp adaptors/matlab/Makefile.mex ${RPM_BUILD_ROOT}/opt/matlab/src/moberg/Makefile
+
+# Python
+(
+    cd adaptors/python2
+    export MOBERG_VERSION=%{version}
+    %{__python2} setup.py install -O1 \
+        --root=$RPM_BUILD_ROOT --prefix /usr \
+        --record=INSTALLED_python2
+)
+(
+    cd adaptors/python3
+    export MOBERG_VERSION=%{version}
+    %{__python3} setup.py install -O1 \
+        --root=$RPM_BUILD_ROOT --prefix /usr \
+        --record=INSTALLED_python3
+)
+
+# Julia
+mkdir -p ${RPM_BUILD_ROOT}/opt/julia/local/packages/MobergIO/src
+cp adaptors/julia/src/*.jl ${RPM_BUILD_ROOT}/opt/julia/local/packages/MobergIO/src
+cp adaptors/julia/Project.toml ${RPM_BUILD_ROOT}/opt/julia/local/packages/MobergIO/Project.toml
+(
+  cd ${RPM_BUILD_ROOT}/opt/julia/local/packages/MobergIO
+  git init
+  git add Project.toml src/*.jl
+  git config remote.origin.url https://gitlab.control.lth.se/anders_blomdell/moberg.git
+  git config user.email "mockbuild@$(hostname)"
+  git config user.name "Mockbuild"
+  git commit -m 'Local version of moberg %{version}'
+  git tag %{version}
+)
+
+%post julia
+set -x
+exit
+#export JULIA_PROJECT=$(mktemp -d julia.XXXXXX)
+export JULIA_PROJECT=/opt/julia
+export JULIA_LOAD_PATH=/opt/julia:
+export JULIA_DEPOT_PATH=/opt/julia:
+cat<<EOF|julia
+import Pkg
+Pkg.add(path="/opt/julia/local/packages/MobergIO/")
+Pkg.precompile()
+EOF
+#rm ${JULIA_PROJECT}/Manifest.toml
+#rm ${JULIA_PROJECT}/Project.toml
+#rmdir ${JULIA_PROJECT}
+
+%postun julia
+# Cleanup of precomiled, etc needed...?
+
+%files
+%defattr(-,root,root,-)
+%{_includedir}/moberg.h
+%{_libdir}/libmoberg.so
+%{_libdir}/libmoberg_serial2002.so
+%{_sbindir}/moberg
+
+%files comedi
+%defattr(-,root,root,-)
+%{_libdir}/libmoberg_comedi.so
+
+%files devel
+%defattr(-,root,root,-)
+%{_includedir}/moberg_config.h
+%{_includedir}/moberg_device.h
+%{_includedir}/moberg_inline.h
+%{_includedir}/moberg_module.h
+%{_includedir}/moberg_parser.h
+%{_libdir}/libmoberg_libtest.so
+
+%files java
+%defattr(-,root,root,-)
+/opt/java/se.lth.control.realtime.Moberg
+
+%files matlab
+%defattr(-,root,root,-)
+%{_libdir}/libmoberg4simulink.so
+/opt/matlab/src/moberg/*
+%{_includedir}/moberg4simulink.h
+
+%files python2 -f adaptors/python2/INSTALLED_python2
+%defattr(-,root,root,-)
+
+%files python%{python3_pkgversion} -f adaptors/python3/INSTALLED_python3
+%defattr(-,root,root,-)
+
+%files julia
+%defattr(-,root,root,-)
+/opt/julia/local/packages/MobergIO
